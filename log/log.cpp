@@ -1,30 +1,31 @@
 
+#include <stdarg.h>
 #include "log.h"
 
-#deinfe MAX_STR_LEN 1024
+#define MAX_STR_LEN 1024
 
-LOG::LOG(const char* filename)
+Log::Log(const char* filename)
 {
 	file.open(filename, ios::out);
 }
 
-LOG::~LOG()
+Log::~Log()
 {
 	file.close();
 }
 
-void LOG::Trace(Log_Level level, const char* fotmat, ...)
+void Log::Trace(Log_Level level, const char* fotmat, ...)
 {
 	if(m_loglevel < level) return;
 	char str[MAX_STR_LEN] = {0};
-	va_list args = NULL;
+	va_list args;
 	va_start(args,fotmat);
-	vsprintf(str, cmd, args);
+	vsprintf(str, fotmat, args);
 	WriteFile(str);
 	va_end(args);
 }
 
-void LOG::WriteFile(const char* string)
+void Log::WriteFile(const char* string)
 {
 	if(string == NULL) return;
 	
@@ -39,7 +40,7 @@ void LOG::WriteFile(const char* string)
 	}
 }
 
-void LOG::SetLogLevel(int level)
+void Log::SetLogLevel(Log_Level level)
 {
 	m_loglevel = level;
 }

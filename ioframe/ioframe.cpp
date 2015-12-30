@@ -1,4 +1,14 @@
 
+#include <assert.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <string.h>
+#include <strings.h>
 #include "ioframe.h"
 
 
@@ -19,10 +29,10 @@ void NetEngine::Init()
 
 void NetEngine::BindPort(int port, SocketType type)
 {
-	struct socketaddr_in addr;
-	bzero(&addr, 0x00, sizeof(addr));
+	struct sockaddr_in addr;
+	bzero(&addr, sizeof(addr));
 	addr.sin_family = AF_INET;
-	inet_pton(AF_INET, "127.0.0.1", addr.sin_addr);
+	inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
 	addr.sin_port = htons(port);
 	
 	int socketfd;
@@ -31,14 +41,14 @@ void NetEngine::BindPort(int port, SocketType type)
 		case SOCKET_TYPE_TCP:
 		{
 			assert((socketfd = socket(PF_INET, SOCK_STREAM, 0)) >= 0);
-			assert(bind(socketfd, (struct socketaddr*)&addr, sizeof(addr)) != -1);
+			assert(bind(socketfd, (struct sockaddr*)&addr, sizeof(addr)) != -1);
 			assert(listen(socketfd, MaxListenNum) != -1);
 		}
 		break;
-		case SOCKET_TYPE_UCP:
+		case SOCKET_TYPE_UDP:
 		{
-			assert((socketfd = socket(PF_INET, SOCK_DGRAM, 0)) >= 0)
-			assert(bind(socketfd, (struct socketaddr*)&addr, sizeof(addr)) != -1);
+			assert((socketfd = socket(PF_INET, SOCK_DGRAM, 0)) >= 0);
+			assert(bind(socketfd, (struct sockaddr*)&addr, sizeof(addr)) != -1);
 		}
 		break;
 		default:
@@ -55,7 +65,7 @@ void NetEngine::BindPort(int port, SocketType type)
 	Socket soc;
 	soc.socketfd = socketfd;
 	soc.type = type;
-	m_fdlist.push_back(soc);
+	m_fdlist.insert(std::map<int,Socket>::value_type(socketfd, soc));
 }
 
 void NetEngine::Run()
@@ -72,21 +82,21 @@ void NetEngine::Run()
 		for(int i = 0; i < number; ++i)
 		{
 			int socketfd = m_events[i].data.fd;
-			std::list<Socket>::iteator it = m_fdlist.find(socketfd);
+			std::map<int,Socket>::iterator it = m_fdlist.find(socketfd);
 			
 			if(it != m_fdlist.end())
 			{
-				switch(it->type)
+				switch(it->second.type)
 				{
 					case SOCKET_TYPE_TCP:
 					{
-						struct socketaddr_in cliaddr;
+						struct sockaddr_in cliaddr;
 						socklen_t cliaddr_len = sizeof(cliaddr);
-						bzero(&cliaddr, 0x00, sizeof(cliaddr));
+						bzero(&cliaddr, sizeof(cliaddr));
 						
 						//在边沿触发模式下, 多个连接同时到达epoll只会通知一次, 所以此处应该循环accpet
 						int confd = 0;
-						while((confd = accpet(it->socketfd, (struct socketaddr*)&cliaddr, &cliaddr_len) > 0)
+						while((confd = accept(socketfd, (struct sockaddr*)&cliaddr, &cliaddr_len)) > 0)
 						{
 							epoll_add_fd(confd);
 						}
@@ -118,14 +128,15 @@ void NetEngine::Run()
 						//在边沿触发模式下, 需要循环读取接收缓冲区的数据
 						memset(m_buffer, 0x00, sizeof(m_buffer));
 						int ncount = 0;
-						whiile((ret = recv(socketfd, m_buffer, TCP_BUFFER_SIZE - 1, 0) > 0)
+						int ret = 0;
+						while((ret = recv(socketfd, m_buffer, TCP_BUFFER_SIZE - 1, 0)) > 0)
 						{
 							ncount += ret;
 						}
 						
 						if(ret < 0)
 						{
-							if(errno == EAGIN || errno == EWOULDBLOCK)
+							if(errno == EAGAIN || errno == EWOULDBLOCK)
 							{
 								break;
 							}
@@ -151,7 +162,7 @@ void NetEngine::Run()
 	}
 }
 
-int setnoblocking(int fd)
+int NetEngine::setnoblocking(int fd)
 {
 	int old_option = fcntl(fd, F_GETFL);
 	int new_option = old_option | O_NONBLOCK;
@@ -159,7 +170,7 @@ int setnoblocking(int fd)
 	return new_option;
 }
 
-void epoll_add_fd(int fd)
+void NetEngine::epoll_add_fd(int fd)
 {
 	epoll_event event;
 	event.data.fd = fd;

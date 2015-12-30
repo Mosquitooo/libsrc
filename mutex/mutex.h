@@ -11,7 +11,7 @@ public:
 	bool Lock();
 	bool Unlock();
 private:
-	pthread_mutex_t m_pMutex;
+	pthread_mutex_t m_Mutex;
 };
 
 class AutoMutex
@@ -28,7 +28,7 @@ public:
 	}
 private:
 	Mutex *m_pMutex;
-}
+};
 
 #define _AUTOMUTEX(t) (AutoMutex mutex(t))
 #endif

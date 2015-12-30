@@ -3,7 +3,7 @@
 #define __LOG_H__
 
 #include <iostream>
-#include "mutex.h"
+#include <fstream>
 
 using namespace std;
 
@@ -19,16 +19,16 @@ class Log
 {
 public:
 	Log(const char* filename);
-	~LOG();
+	~Log();
 public:
 	void Trace(Log_Level level, const char* fotmat, ...);
-	void SetLogLevel(int level);
+	void SetLogLevel(Log_Level level);
 private:
 	void WriteFile(const char* string);
 private:
 	Log_Level m_loglevel;
 	ofstream file;
-	Mutex m_mutex;
-}
+	pthread_mutex_t m_mutex;
+};
 
 #endif

@@ -2,6 +2,9 @@
 #ifndef __IOFRAME_H__
 #define __IOFRAME_H__
 
+#include <sys/epoll.h>
+#include <map>
+
 #define MAX_EPOLL_EVENTS_NUM 1024
 #define TCP_BUFFER_SIZE  1024
 
@@ -23,7 +26,7 @@ typedef struct
 class NetEngine
 {
 public:
-	NetEngine(const char* host, int port);
+	NetEngine();
 	~NetEngine();
 
 public:
@@ -32,10 +35,10 @@ public:
 	void Run();
 private:
 	int  setnoblocking(int fd);
-	void epoll_add_fd(int epollfd, int fd);
+	void epoll_add_fd(int fd);
 	
 private:
-	std::list<Socket> m_fdlist;
+	std::map<int, Socket> m_fdlist;
 	epoll_event m_events[MAX_EPOLL_EVENTS_NUM];
 	int m_epollfd;
 	char m_buffer[TCP_BUFFER_SIZE];
