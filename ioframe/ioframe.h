@@ -35,9 +35,9 @@ private:
 	void epoll_add_fd(int epollfd, int fd);
 	
 private:
-	int m_epollfd;
-	epoll_event m_events[MAX_EPOLL_EVENTS_NUM];
 	std::list<Socket> m_fdlist;
+	epoll_event m_events[MAX_EPOLL_EVENTS_NUM];
+	int m_epollfd;
 	char m_buffer[TCP_BUFFER_SIZE];
 };
 
