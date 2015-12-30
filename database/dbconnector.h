@@ -34,6 +34,7 @@ public:
 	//释放
 	void Release();
 private:
+	pthread_mutex_t m_mutex;
 	int 		m_ColCount;
 	MYSQL_RES* 	m_res;
 	MYSQL_ROW  	m_row;

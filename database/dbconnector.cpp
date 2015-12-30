@@ -5,12 +5,12 @@
 //--------------------------------------DBResult-----------------------------------
 DBResult::DBResult():m_ColCount(0),m_res(NULL),m_pMysql(NULL)
 {
-	
+
 }
 
 DBResult::~DBResult()
 {
-	
+
 }
 
 DBResult::Init(MYSQL* mysql)
@@ -61,6 +61,7 @@ void DBResult::Release()
 //--------------------------------------DBConnector--------------------------------
 DBConnector::DBConnector()
 {
+	pthread_mutex_init(&m_mutex);
 	if(!mysql_init(&mysql))
 	{
 		printf("mysql init failure\n");
@@ -70,6 +71,7 @@ DBConnector::DBConnector()
 DBConnector::~DBConnector()
 {
 	mysql_close(&mysql);
+	pthread_mutex_destory(&m_mutex);
 }
 
 bool DBConnector::Connect(const string& host, const string& user, const string& password, const string& database, int port)
