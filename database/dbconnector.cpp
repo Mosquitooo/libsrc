@@ -1,5 +1,5 @@
 
-
+#include <stdlib.h>
 #include "dbconnector.h"
 
 //--------------------------------------DBResult-----------------------------------
@@ -13,7 +13,7 @@ DBResult::~DBResult()
 
 }
 
-DBResult::Init(MYSQL* mysql)
+bool DBResult::Init(MYSQL* mysql)
 {
 	m_pMysql = mysql;
 }
@@ -22,7 +22,7 @@ void DBResult::GetFieldValue(int FieldIndex, int* pvalue)
 {
 	if(FieldIndex < m_ColCount)
 	{
-		*pvalue = m_row[FieldIndex];
+		*pvalue = atoi(m_row[FieldIndex]);
 	}
 }
 
@@ -44,7 +44,7 @@ bool DBResult::GetResult()
 //得到下一行
 bool DBResult::GetNextRow()
 {
-	m_row = mysql_fetch_row(res);
+	m_row = mysql_fetch_row(m_res);
 	if(m_row == NULL)
 	{
 		return false;
@@ -55,13 +55,13 @@ bool DBResult::GetNextRow()
 //释放
 void DBResult::Release()
 {
-	mysql_free_result(res);
+	mysql_free_result(m_res);
 }
 
 //--------------------------------------DBConnector--------------------------------
 DBConnector::DBConnector()
 {
-	pthread_mutex_init(&m_mutex);
+	pthread_mutex_init(&m_mutex, NULL);
 	if(!mysql_init(&mysql))
 	{
 		printf("mysql init failure\n");
@@ -71,49 +71,50 @@ DBConnector::DBConnector()
 DBConnector::~DBConnector()
 {
 	mysql_close(&mysql);
-	pthread_mutex_destory(&m_mutex);
+	pthread_mutex_destroy(&m_mutex);
 }
 
-bool DBConnector::Connect(const string& host, const string& user, const string& password, const string& database, int port)
+bool DBConnector::Connect(const char* host, const char* user, const char* password, const char* database, int port)
 {
 	if (!mysql_real_connect(&mysql, host, user, password, database, 0, NULL, CLIENT_MULTI_RESULTS)) 
 	{ 
-		fprintf(stderr, "%s\n", mysql_error(conn)); 
+		fprintf(stderr, "%s\n", mysql_error(&mysql)); 
 		return false;
 	}
 }
 
-void ResetProc()
+void DBConnector::ResetProc()
 {
 	m_command.assign(NULL);
 }
 
-void SetProcName(const string& ProcName)
+void DBConnector::SetProcName(const string& ProcName)
 {
 	m_command.assign("call ");
 	m_command.append(ProcName);
 	m_command.append("(");
 }
 
-void AddProcParam(const char* ParamName, int ParamValue)
+void DBConnector::AddProcParam(const char* ParamName, int ParamValue)
 {
-	m_command.append(itoa(ParamValue));
+	snprintf(m_convert, MAX_CONVERT_SIZE - 1, "%s", ParamValue);
+	m_command.append(m_convert);
 }
 
-void AddProcParam(const char* ParamName, const char* ParamValue)
+void DBConnector::AddProcParam(const char* ParamName, const char* ParamValue)
 {
 	m_command.append(ParamValue);
 }
 
-bool Exec()
+bool DBConnector::Exec()
 {
 	m_command.append(")");
-	return mysql_query(&mysql, m_command);
+	return mysql_query(&mysql, m_command.c_str());
 }
 
-bool DBConnector::Exec(string& query)
+bool DBConnector::DBConnector::Exec(string& query)
 {
-	return mysql_query(&mysql, qurey);
+	return mysql_query(&mysql, query.c_str());
 }
 
 

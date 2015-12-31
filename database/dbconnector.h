@@ -11,8 +11,11 @@ Create Date:	2015-12-22
 
 #include "mysql/mysql.h"
 #include <string>
+#include <pthread.h>
 
 using namespace std;
+
+#define MAX_CONVERT_SIZE 32
 
 class DBResult
 {
@@ -34,7 +37,6 @@ public:
 	//释放
 	void Release();
 private:
-	pthread_mutex_t m_mutex;
 	int 		m_ColCount;
 	MYSQL_RES* 	m_res;
 	MYSQL_ROW  	m_row;
@@ -63,9 +65,11 @@ public:
 	int GetErrno();
 
 private:
+	pthread_mutex_t m_mutex;
 	MYSQL mysql;
 	DBResult	m_result;
 	string 		m_command;
+	char 		m_convert[MAX_CONVERT_SIZE];
 	
 };
 
