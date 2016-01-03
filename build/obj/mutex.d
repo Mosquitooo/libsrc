@@ -1,1 +1,1 @@
-1.o mutex.d: mutex/mutex.cpp mutex/mutex.h
+mutex.o mutex.d: mutex/mutex.cpp mutex/mutex.h

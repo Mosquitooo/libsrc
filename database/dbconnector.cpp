@@ -1,5 +1,7 @@
 
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 #include "dbconnector.h"
 
 //--------------------------------------DBResult-----------------------------------
@@ -97,7 +99,7 @@ void DBConnector::SetProcName(const string& ProcName)
 
 void DBConnector::AddProcParam(const char* ParamName, int ParamValue)
 {
-	snprintf(m_convert, MAX_CONVERT_SIZE - 1, "%s", ParamValue);
+	snprintf(m_convert, MAX_CONVERT_SIZE - 1, "%d", ParamValue);
 	m_command.append(m_convert);
 }
 

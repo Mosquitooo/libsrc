@@ -3,34 +3,32 @@
 DESTDIR = ./build/obj
 SRCDIR = database:ioframe:log:mutex:thread
 libsdkobj = ioframe.o dbconnector.o log.o mutex.o thread.o
-DEPENDFILES = $(addprefix $(DESTDIR)/, $(libsdkobj:.o=.d))
+DEPENDFILES = $(libsdkobj:.o=.d)
 
 #compile opt
 CXX = g++
-CXXFLAGS = -g 
+CXXFLAGS = -g
 
 #set search path
 vpath %.cpp $(SRCDIR)
 vpath %.h $(SRCDIR)
 
-SDK: $(libsdkobj)
-	@mkdir -p $(DESTDIR)
+SDK:$(libsdkobj)
 	$(AR) -r libsdk.a $(addprefix $(DESTDIR)/, $(libsdkobj))
 
 %.o:%.cpp
-	@mkdir -p $(DESTDIR)
 	@$(CXX) $(CXXFLAGS) -c -o $(DESTDIR)/$@ $<
 
-%.d:%.cpp
-	@mkdir -p $(DESTDIR);\
-	$(RM) -f $(DESTDIR)/$@;\
-	$(CXX) -MM $< > $(DESTDIR)/$@.;\
-	sed 's/\($*\)\.o/1.o $@/g' $(DESTDIR)/$@. > $(DESTDIR)/$@;\
+$(DEPENDFILES):%.d:%.cpp
+	@mkdir -p $(DESTDIR)
+	@set -e;rm -rf $(DESTDIR)/$@;\
+	$(CXX) $(CXXFLAGS) -MM $< > $(DESTDIR)/$@.;\
+	sed 's/\($*\)\.o/\1.o $@/g' $(DESTDIR)/$@. > $(DESTDIR)/$@;\
 	$(RM) -f $(DESTDIR)/$@.;
 
-include $(libsdkobj:.o=.d)
+-include $(DEPENDFILES)
 
 .PHYON:clean
 clean:
-	@-$(RM) -rf libsdk.a $(addprefix $(DESTDIR)/, $(libsdkobj))
-	@-$(RM) -rf $(DEPENDFILES)
+	@-rm -rf libsdk.a $(addprefix $(DESTDIR)/, $(libsdkobj))
+	@-rm -rf $(DEPENDFILES)

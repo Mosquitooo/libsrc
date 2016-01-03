@@ -1,1 +1,1 @@
-1.o log.d: log/log.cpp log/log.h
+log.o log.d: log/log.cpp log/log.h

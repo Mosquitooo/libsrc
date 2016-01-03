@@ -65,7 +65,7 @@ void NetEngine::BindPort(int port, SocketType type)
 	Socket soc;
 	soc.socketfd = socketfd;
 	soc.type = type;
-	m_fdlist.insert(std::map<int,Socket>::value_type(socketfd, soc));
+	m_socklist.insert(std::map<int,Socket>::value_type(socketfd, soc));
 }
 
 void NetEngine::Run()
@@ -82,9 +82,9 @@ void NetEngine::Run()
 		for(int i = 0; i < number; ++i)
 		{
 			int socketfd = m_events[i].data.fd;
-			std::map<int,Socket>::iterator it = m_fdlist.find(socketfd);
+			std::map<int,Socket>::iterator it = m_socklist.find(socketfd);
 			
-			if(it != m_fdlist.end())
+			if(it != m_socklist.end())
 			{
 				switch(it->second.type)
 				{
@@ -106,7 +106,6 @@ void NetEngine::Run()
 							if (errno != EAGAIN && errno != ECONNABORTED && errno != EPROTO && errno != EINTR)
 							perror("accept");
 						}
-
 					}
 					break;
 					
@@ -150,6 +149,7 @@ void NetEngine::Run()
 						else
 						{
 							//dosomething
+							printf("dosomething: %s\n", m_buffer);
 						}
 					}
 				}
