@@ -12,9 +12,9 @@
 #include "ioframe.h"
 
 
-NetEngine::NetEngine()
+NetEngine::NetEngine():m_MaxListenNum(10)
 {
-	
+
 }
 
 NetEngine::~NetEngine()
@@ -22,8 +22,9 @@ NetEngine::~NetEngine()
 	
 }
 
-void NetEngine::Init()
+void NetEngine::Init(NetFunc callback)
 {
+	m_callback = callback;
 	assert((m_epollfd = epoll_create(MAX_EPOLL_EVENTS_NUM)) != -1);
 }
 
@@ -32,7 +33,7 @@ void NetEngine::BindPort(int port, SocketType type)
 	struct sockaddr_in addr;
 	bzero(&addr, sizeof(addr));
 	addr.sin_family = AF_INET;
-	inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+	addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	addr.sin_port = htons(port);
 	
 	int socketfd;
@@ -42,7 +43,7 @@ void NetEngine::BindPort(int port, SocketType type)
 		{
 			assert((socketfd = socket(PF_INET, SOCK_STREAM, 0)) >= 0);
 			assert(bind(socketfd, (struct sockaddr*)&addr, sizeof(addr)) != -1);
-			assert(listen(socketfd, MaxListenNum) != -1);
+			assert(listen(socketfd, m_MaxListenNum) != -1);
 		}
 		break;
 		case SOCKET_TYPE_UDP:
@@ -78,7 +79,7 @@ void NetEngine::Run()
 			printf("epoll failure");
 			break;
 		}
-		
+
 		for(int i = 0; i < number; ++i)
 		{
 			int socketfd = m_events[i].data.fd;
@@ -133,7 +134,7 @@ void NetEngine::Run()
 							ncount += ret;
 						}
 						
-						if(ret < 0)
+						if(ncount == 0 && ret < 0)
 						{
 							if(errno == EAGAIN || errno == EWOULDBLOCK)
 							{
@@ -148,18 +149,39 @@ void NetEngine::Run()
 						}
 						else
 						{
-							//dosomething
-							printf("dosomething: %s\n", m_buffer);
+							m_callback(m_buffer);
 						}
 					}
 				}
-				else
+
+				if(m_events[i].events & EPOLLOUT)
 				{
-					printf("unkonw data");
+					#if 0
+					int nwrite = 0, nDataSize = 0;
+					int n = nDataSize;
+					while(n > 0)
+					{
+						nwrite = send(socketfd, m_buffer + n, n);
+						if(nwrite < n)
+						{
+							if(nwrite == -1 && errno != EAGAIN)
+							{
+								perror(strerr(errno));
+							}
+							break;
+						}
+						n -= nwrite;
+					}
+					#endif
 				}
 			}
 		}
 	}
+}
+
+void NetEngine::Send(const char *)
+{
+
 }
 
 int NetEngine::setnoblocking(int fd)
