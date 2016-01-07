@@ -22,6 +22,18 @@ typedef struct
 	SocketType type;
 }Socket;
 
+typedef struct
+{
+	int socketfd;
+	char* pMessage;
+}NetMessage;
+
+typedef struct
+{
+	int nSendByte;
+	NetMessage Msg;
+}MessageBlock;
+
 
 class NetEngine
 {
@@ -33,14 +45,23 @@ public:
 	void Init(NetFunc );
 	void BindPort(int port, SocketType type);
 	void Run();
-	void Send(const char *);
+
+	void Send(int socketfd, const char *);
+	void Close(int socketfd);
 private:
 	int  setnoblocking(int fd);
 	void epoll_add_fd(int fd);
+	void RecvFromCli(int fd);
+	void SendToClient(int fd);
 	
 private:
-	std::map<int, const char *> m_RecvList; //数据接受队列
-	sta::map<int, const char *> m_SendList; //数据发送队列
+	
+	pthread_mutex_t m_RecvMutex;	//发送队列互斥锁
+	pthread_mutex_t m_SendMutex;	//接收队列互斥锁
+	
+	std::queue<NetMessage> m_RecvList; //数据接收队列
+	sta::map<int, NetMessage> m_SendList; //数据发送队列
+	sta::map<int, MessageBlock> m_SendFailList; //数据发送失败队列
 
 	std::map<int, Socket> m_socklist;
 	epoll_event m_events[MAX_EPOLL_EVENTS_NUM];

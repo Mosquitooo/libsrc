@@ -123,65 +123,100 @@ void NetEngine::Run()
 			{
 				if(m_events[i].events & EPOLLIN)
 				{
-					while(true)
-					{
-						//在边沿触发模式下, 需要循环读取接收缓冲区的数据
-						memset(m_buffer, 0x00, sizeof(m_buffer));
-						int ncount = 0;
-						int ret = 0;
-						while((ret = recv(socketfd, m_buffer, TCP_BUFFER_SIZE - 1, 0)) > 0)
-						{
-							ncount += ret;
-						}
-						
-						if(ncount == 0 && ret < 0)
-						{
-							if(errno == EAGAIN || errno == EWOULDBLOCK)
-							{
-								break;
-							}
-							close(socketfd);
-							break;
-						}
-						else if(ret == 0)
-						{
-							close(socketfd);
-						}
-						else
-						{
-							m_callback(m_buffer);
-						}
-					}
+					RecvFromCli(socketfd);
 				}
-
+				
 				if(m_events[i].events & EPOLLOUT)
 				{
-					#if 0
-					int nwrite = 0, nDataSize = 0;
-					int n = nDataSize;
-					while(n > 0)
-					{
-						nwrite = send(socketfd, m_buffer + n, n);
-						if(nwrite < n)
-						{
-							if(nwrite == -1 && errno != EAGAIN)
-							{
-								perror(strerr(errno));
-							}
-							break;
-						}
-						n -= nwrite;
-					}
-					#endif
+					SendToClient(socketfd);
 				}
 			}
 		}
 	}
 }
 
-void NetEngine::Send(const char *)
+void NetEngine::RecvFromCli(int socketfd)
 {
+	//在边沿触发模式下, 需要循环读取接收缓冲区的数据
+	memset(m_buffer, 0x00, sizeof(m_buffer));
+	int ncount = 0, ret = 0;
+	while((ret = recv(socketfd, m_buffer, TCP_BUFFER_SIZE - 1, 0)) > 0)
+	{
+		ncount += ret;
+	}
+	
+	if(ncount == 0 && ret < 0)
+	{
+		if(errno == EAGAIN || errno == EWOULDBLOCK)
+		{
+			//非阻塞模式，当前缓冲区无数据可读。
+		}
+		else if(errno == EINTR)
+		{
+			//被中断, 继续处理
+			continue;
+		}
+		else
+		{
+			//其它未知错误
+			Close(socketfd);
+		}
+	}
+	else if(ret == 0)
+	{
+		//对端socket关闭, 发送过FIN
+		Close(socketfd);
+	}
+	else
+	{
+		
+	}
+}
 
+void NetEngine::Send(int socketfd, const char * pMessage)
+{
+	if(pMessage == NULL)
+	{
+		return;
+	}
+	
+	int msglen = strlen(pMessage);
+	NetMessage Msg = {0};
+	
+	char Msg.pMessage = (char*)malloc(msglen + 1);
+	if(Msg.pMessage == NULL)
+	{
+		return;
+	}
+	memset(Msg.pMessage, 0x00, msglen + 1);
+	
+	pthread_mutex_lock(&m_SendMutex);
+	std::map<int, NetMessage>::iterator it = m_SendList.find(socketfd);
+	if(it != m_SendList.end())
+	{
+		it->second.push(Msg);
+	}
+	else
+	{
+		m_SendList.insert(std::map<int, NetMessage>::value_type(socketfd, Msg));
+	}
+	pthread_mutex_unlock(&m_SendMutex);
+}
+
+void NetEngine::Close(int socketfd)
+{
+	std::map<int, MessageBlock>::iterator iter = m_SendFailList.find(fd);
+	if(iter != m_SendFailList.end())
+	{
+		m_SendFailList.erase(iter);
+	}
+	
+	std::map<int, NetMessage>::iterator it = m_SendList.find(fd);
+	if(iter != m_SendFailList.end())
+	{
+		m_SendList.erase(it);
+	}
+	close(socketfd);
 }
 
 int NetEngine::setnoblocking(int fd)
@@ -199,4 +234,66 @@ void NetEngine::epoll_add_fd(int fd)
 	event.events  = EPOLLIN | EPOLLET;
 	epoll_ctl(m_epollfd, EPOLL_CTL_ADD, fd, &event);
 	setnoblocking(fd);
+}
+
+void NetEngine::SendToClient(int fd)
+{
+	int nwrite = 0, nDataSize = 0, n = 0;
+	std::map<int, MessageBlock>::iterator iter = m_SendFailList.find(fd);
+	if(iter != m_SendFailList.end() && !)
+	{
+		while(!it->second.empty())
+		{
+			MessageBlock Msg = it->second.front();
+			nDataSize = strlen(Msg.pMessage);
+			n = nDataSize - Msg.nSendByte;
+			while(n > 0)
+			{
+				nwrite = send(fd, Msg.pMessage + Msg.nSendByte , n);
+				if(nwrite < n)
+				{
+					return;
+				}
+				n -= nwrite;
+				Msg.nSendByte += nwrite;
+			}
+			it->second.pop();
+		}
+	}
+	
+	std::map<int, NetMessage>::iterator it = m_SendList.find(fd);
+	if(it != m_SendList.end())
+	{
+		if(it->second.empty())
+		{
+			return;
+		}
+		
+		NetMessage Msg = it->second.front();
+		
+		nDataSize = strlen(Msg.pMessage);
+		n = nDataSize;
+		while(n > 0)
+		{
+			nwrite = send(fd, Msg.pMessage + nDataSize - n, n);
+			if(nwrite < n)
+			{
+				//对端缓冲区满, 消息发送失败, 缓存到失败队列, 记录已发送的字节数
+				MessageBlock message = {0};
+				memcpy(&message.Msg, &Msg, sizeof(Msg));
+				message = nDataSize - n;
+				m_SendFailList.insert(std::<int, MessageBlock>::value_type(fd, message));
+				
+				if(nwrite == -1 && errno != EAGAIN)
+				{
+					perror(strerr(errno));
+				}
+				
+				return;
+			}
+			n -= nwrite;
+		}
+		free(Msg.pMessage);
+		it->second.pop();
+	}
 }
