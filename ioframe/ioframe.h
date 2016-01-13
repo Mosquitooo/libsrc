@@ -4,36 +4,34 @@
 
 #include <sys/epoll.h>
 #include <map>
+#include <queue>
 
 #define MAX_EPOLL_EVENTS_NUM 1024
-#define TCP_BUFFER_SIZE  1024
+#define TCP_BUFFER_SIZE  8192
 
 typedef void (*NetFunc)(void *);
 
-typedef enum
-{
-	SOCKET_TYPE_TCP,
-	SOCKET_TYPE_UDP
-}SocketType;
-
 typedef struct
 {
-	int socketfd;
-	SocketType type;
-}Socket;
-
-typedef struct
-{
-	int socketfd;
-	char* pMessage;
+	unsigned int nDataLen;
+	char*        pMessage;
 }NetMessage;
 
 typedef struct
 {
-	int nSendByte;
-	NetMessage Msg;
+	int  nByte;        			     //ÒÑ·¢ËÍ»ò½ÓÊÕµÄ×Ö½ÚÊı
+	char Cache[TCP_BUFFER_SIZE];     //ÏûÏ¢Ìå
 }MessageBlock;
 
+/*
+protocol:
+	unsigned int length	//Êı¾İ³¤¶È
+	char*       payload	//¾»ºÉ
+	char        cMagic	//Ä§·¨×Ö·û, ·Ö¸î·û
+*/
+
+//send: Ö±½Ó·¢ËÍÊı¾İ. Èç¹û·µ»Ø´íÎóÔò´æ´¢µ½»º³åÇø, ÏÂ´Î´¥·¢¼ÌĞø·¢ËÍ
+//recv£º´æ´¢µ½»º³åÇø, Ö®ºó·Åµ½ÈÎÎñ¶ÓÁĞ.
 
 class NetEngine
 {
@@ -43,30 +41,36 @@ public:
 
 public:
 	void Init(NetFunc );
-	void BindPort(int port, SocketType type);
+	void BindPort(int port);
 	void Run();
-
-	void Send(int socketfd, const char *);
+	void Send(int socketfd, const char *, int);
 	void Close(int socketfd);
 private:
-	int  setnoblocking(int fd);
-	void epoll_add_fd(int fd);
-	void RecvFromCli(int fd);
-	void SendToClient(int fd);
+	int  setnoblocking(int socketfd);
+	void epoll_add_fd(int socketfd);
+
+	void AccpetFromCli(int socketfd);
+	void RecvFromCli(int socketfd);
+
+	void MovetoSendCache(int socketfd, const char*, int);
+	void SendToClient(int socketfd);
+	
+	
+	void Decode(const char* pMessage, unsigned int Datalen, MessageBlock& );
+	void Encode(MessageBlock& msg);
 	
 private:
 	
-	pthread_mutex_t m_RecvMutex;	//å‘é€é˜Ÿåˆ—äº’æ–¥é”
-	pthread_mutex_t m_SendMutex;	//æ¥æ”¶é˜Ÿåˆ—äº’æ–¥é”
+	pthread_mutex_t m_RecvMutex;	//·¢ËÍ¶ÓÁĞ»¥³âËø
+	pthread_mutex_t m_SendMutex;	//½ÓÊÕ¶ÓÁĞ»¥³âËø
 	
-	std::queue<NetMessage> m_RecvList; //æ•°æ®æ¥æ”¶é˜Ÿåˆ—
-	sta::map<int, NetMessage> m_SendList; //æ•°æ®å‘é€é˜Ÿåˆ—
-	sta::map<int, MessageBlock> m_SendFailList; //æ•°æ®å‘é€å¤±è´¥é˜Ÿåˆ—
+	std::queue<NetMessage> m_RecvList; //Êı¾İ½ÓÊÕ¶ÓÁĞ
+	std::map<int, MessageBlock>  m_RecvCacheMap;      //Êı¾İ½ÓÊÕ»º´æ¶ÓÁĞ
+	std::map<int, MessageBlock>  m_SendCacheMap; //Êı¾İ·¢ËÍ»º´æ¶ÓÁĞ
 
-	std::map<int, Socket> m_socklist;
 	epoll_event m_events[MAX_EPOLL_EVENTS_NUM];
+	int m_listenfd;
 	int m_epollfd;
-	char m_buffer[TCP_BUFFER_SIZE];
 	NetFunc m_callback;
 	const int m_MaxListenNum;
 };

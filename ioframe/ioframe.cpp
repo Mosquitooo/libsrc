@@ -14,12 +14,14 @@
 
 NetEngine::NetEngine():m_MaxListenNum(10)
 {
-
+	pthread_mutex_init(&m_RecvMutex, NULL);
+	pthread_mutex_init(&m_SendMutex, NULL);
 }
 
 NetEngine::~NetEngine()
 {
-	
+	pthread_mutex_destroy(&m_RecvMutex);
+	pthread_mutex_destroy(&m_SendMutex);
 }
 
 void NetEngine::Init(NetFunc callback)
@@ -28,45 +30,23 @@ void NetEngine::Init(NetFunc callback)
 	assert((m_epollfd = epoll_create(MAX_EPOLL_EVENTS_NUM)) != -1);
 }
 
-void NetEngine::BindPort(int port, SocketType type)
+void NetEngine::BindPort(int port)
 {
 	struct sockaddr_in addr;
 	bzero(&addr, sizeof(addr));
 	addr.sin_family = AF_INET;
 	addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	addr.sin_port = htons(port);
+
+	assert((m_listenfd = socket(PF_INET, SOCK_STREAM, 0)) >= 0);
+	assert(bind(m_listenfd, (struct sockaddr*)&addr, sizeof(addr)) != -1);
+	assert(listen(m_listenfd, m_MaxListenNum) != -1);
 	
-	int socketfd;
-	switch(type)
-	{
-		case SOCKET_TYPE_TCP:
-		{
-			assert((socketfd = socket(PF_INET, SOCK_STREAM, 0)) >= 0);
-			assert(bind(socketfd, (struct sockaddr*)&addr, sizeof(addr)) != -1);
-			assert(listen(socketfd, m_MaxListenNum) != -1);
-		}
-		break;
-		case SOCKET_TYPE_UDP:
-		{
-			assert((socketfd = socket(PF_INET, SOCK_DGRAM, 0)) >= 0);
-			assert(bind(socketfd, (struct sockaddr*)&addr, sizeof(addr)) != -1);
-		}
-		break;
-		default:
-			return;
-		break;
-	}
-	
-	//åœ¨æœåŠ¡å™¨è°ƒç”¨acceptä¹‹å‰ï¼Œå®¢æˆ·ç«¯ä¸»åŠ¨å‘é€RSTç»ˆæ­¢è¿æ¥ï¼Œå¯¼è‡´åˆšåˆšå»ºç«‹çš„è¿æ¥ä»å°±ç»ªé˜Ÿåˆ—ä¸­ç§»å‡ºã€‚
-	//å¦‚æœå¥—æ¥å£è¢«è®¾ç½®æˆé˜»å¡æ¨¡å¼ï¼ŒæœåŠ¡å™¨å°±ä¼šä¸€ç›´é˜»å¡åœ¨acceptè°ƒç”¨ä¸Šï¼Œç›´åˆ°å…¶ä»–æŸä¸ªå®¢æˆ·å»ºç«‹ä¸€ä¸ªæ–°çš„è¿æ¥ä¸ºæ­¢ã€‚
-	//ä½†æ˜¯åœ¨æ­¤æœŸé—´ï¼ŒæœåŠ¡å™¨å•çº¯åœ°é˜»å¡åœ¨acceptè°ƒç”¨ä¸Šï¼Œå°±ç»ªé˜Ÿåˆ—ä¸­çš„å…¶ä»–æè¿°ç¬¦éƒ½å¾—ä¸åˆ°å¤„ç†ã€‚
-	//è§£å†³åŠæ³•æ˜¯æŠŠç›‘å¬å¥—æ¥å£è®¾ç½®ä¸ºéé˜»å¡ï¼Œå½“å®¢æˆ·åœ¨æœåŠ¡å™¨è°ƒç”¨acceptä¹‹å‰ä¸­æ­¢æŸä¸ªè¿æ¥æ—¶ï¼Œacceptè°ƒç”¨å¯ä»¥ç«‹å³è¿”å›-1ã€‚
-	epoll_add_fd(socketfd);
-	
-	Socket soc;
-	soc.socketfd = socketfd;
-	soc.type = type;
-	m_socklist.insert(std::map<int,Socket>::value_type(socketfd, soc));
+	//ÔÚ·şÎñÆ÷µ÷ÓÃacceptÖ®Ç°£¬¿Í»§¶ËÖ÷¶¯·¢ËÍRSTÖÕÖ¹Á¬½Ó£¬µ¼ÖÂ¸Õ¸Õ½¨Á¢µÄÁ¬½Ó´Ó¾ÍĞ÷¶ÓÁĞÖĞÒÆ³ö¡£
+	//Èç¹ûÌ×½Ó¿Ú±»ÉèÖÃ³É×èÈûÄ£Ê½£¬·şÎñÆ÷¾Í»áÒ»Ö±×èÈûÔÚacceptµ÷ÓÃÉÏ£¬Ö±µ½ÆäËûÄ³¸ö¿Í»§½¨Á¢Ò»¸öĞÂµÄÁ¬½ÓÎªÖ¹¡£
+	//µ«ÊÇÔÚ´ËÆÚ¼ä£¬·şÎñÆ÷µ¥´¿µØ×èÈûÔÚacceptµ÷ÓÃÉÏ£¬¾ÍĞ÷¶ÓÁĞÖĞµÄÆäËûÃèÊö·û¶¼µÃ²»µ½´¦Àí¡£
+	//½â¾ö°ì·¨ÊÇ°Ñ¼àÌıÌ×½Ó¿ÚÉèÖÃÎª·Ç×èÈû£¬µ±¿Í»§ÔÚ·şÎñÆ÷µ÷ÓÃacceptÖ®Ç°ÖĞÖ¹Ä³¸öÁ¬½ÓÊ±£¬acceptµ÷ÓÃ¿ÉÒÔÁ¢¼´·µ»Ø-1¡£
+	epoll_add_fd(m_listenfd);
 }
 
 void NetEngine::Run()
@@ -76,146 +56,177 @@ void NetEngine::Run()
 		int number = epoll_wait(m_epollfd, m_events, MAX_EPOLL_EVENTS_NUM, -1);
 		if(number <= 0)
 		{
-			printf("epoll failure");
 			break;
 		}
 
 		for(int i = 0; i < number; ++i)
 		{
 			int socketfd = m_events[i].data.fd;
-			std::map<int,Socket>::iterator it = m_socklist.find(socketfd);
 			
-			if(it != m_socklist.end())
+			if(socketfd == m_listenfd)
 			{
-				switch(it->second.type)
-				{
-					case SOCKET_TYPE_TCP:
-					{
-						struct sockaddr_in cliaddr;
-						socklen_t cliaddr_len = sizeof(cliaddr);
-						bzero(&cliaddr, sizeof(cliaddr));
-						
-						//åœ¨è¾¹æ²¿è§¦å‘æ¨¡å¼ä¸‹, å¤šä¸ªè¿æ¥åŒæ—¶åˆ°è¾¾epollåªä¼šé€šçŸ¥ä¸€æ¬¡, æ‰€ä»¥æ­¤å¤„åº”è¯¥å¾ªç¯accpet
-						int confd = 0;
-						while((confd = accept(socketfd, (struct sockaddr*)&cliaddr, &cliaddr_len)) > 0)
-						{
-							epoll_add_fd(confd);
-						}
-						
-						if(confd == -1)
-						{
-							if (errno != EAGAIN && errno != ECONNABORTED && errno != EPROTO && errno != EINTR)
-							perror("accept");
-						}
-					}
-					break;
-					
-					case SOCKET_TYPE_UDP:
-					{
-						//dosomething
-					}
-					break;
-						default:
-					break;
-				}
+				AccpetFromCli(socketfd);
+			}
+			else if(m_events[i].events & EPOLLIN)
+			{
+				RecvFromCli(socketfd);
+			}
+			else if(m_events[i].events & EPOLLOUT)
+			{
+				SendToClient(socketfd);
 			}
 			else
 			{
-				if(m_events[i].events & EPOLLIN)
-				{
-					RecvFromCli(socketfd);
-				}
 				
-				if(m_events[i].events & EPOLLOUT)
-				{
-					SendToClient(socketfd);
-				}
 			}
 		}
 	}
 }
 
-void NetEngine::RecvFromCli(int socketfd)
+void NetEngine::AccpetFromCli(int socketfd)
 {
-	//åœ¨è¾¹æ²¿è§¦å‘æ¨¡å¼ä¸‹, éœ€è¦å¾ªç¯è¯»å–æ¥æ”¶ç¼“å†²åŒºçš„æ•°æ®
-	memset(m_buffer, 0x00, sizeof(m_buffer));
-	int ncount = 0, ret = 0;
-	while((ret = recv(socketfd, m_buffer, TCP_BUFFER_SIZE - 1, 0)) > 0)
-	{
-		ncount += ret;
-	}
+	struct sockaddr_in cliaddr;
+	socklen_t cliaddr_len = sizeof(cliaddr);
+	bzero(&cliaddr, sizeof(cliaddr));
 	
-	if(ncount == 0 && ret < 0)
+	//ÔÚ±ßÑØ´¥·¢Ä£Ê½ÏÂ, ¶à¸öÁ¬½ÓÍ¬Ê±µ½´ïepollÖ»»áÍ¨ÖªÒ»´Î, ËùÒÔ´Ë´¦Ó¦¸ÃÑ­»·accpet
+	int confd = 0;
+	while(true)
 	{
-		if(errno == EAGAIN || errno == EWOULDBLOCK)
+		confd = accept(socketfd, (struct sockaddr*)&cliaddr, &cliaddr_len);
+		if(confd <= 0)
 		{
-			//éé˜»å¡æ¨¡å¼ï¼Œå½“å‰ç¼“å†²åŒºæ— æ•°æ®å¯è¯»ã€‚
+			if (errno != EAGAIN && errno != ECONNABORTED && errno != EPROTO && errno != EINTR)
+				perror("accept");
+			break;
 		}
-		else if(errno == EINTR)
-		{
-			//è¢«ä¸­æ–­, ç»§ç»­å¤„ç†
-			continue;
-		}
-		else
-		{
-			//å…¶å®ƒæœªçŸ¥é”™è¯¯
-			Close(socketfd);
-		}
-	}
-	else if(ret == 0)
-	{
-		//å¯¹ç«¯socketå…³é—­, å‘é€è¿‡FIN
-		Close(socketfd);
-	}
-	else
-	{
+		epoll_add_fd(confd);
+		MessageBlock Msg = {0};
 		
+		pthread_mutex_lock(&m_RecvMutex);
+		m_RecvCacheMap.insert(std::map<int, MessageBlock>::value_type(confd, Msg));
+		pthread_mutex_unlock(&m_RecvMutex);
+
+		pthread_mutex_lock(&m_SendMutex);
+		m_SendCacheMap.insert(std::map<int, MessageBlock>::value_type(confd, Msg));
+		pthread_mutex_unlock(&m_SendMutex);
 	}
 }
 
-void NetEngine::Send(int socketfd, const char * pMessage)
+
+/*  protocol: |datalength|payload|MagicChar|    */
+/*            |   4 byte |    datalength   |    */
+/*                               |  1 byte |    */
+
+void NetEngine::RecvFromCli(int socketfd)
 {
-	if(pMessage == NULL)
+	std::map<int, MessageBlock>::iterator it = m_RecvCacheMap.find(socketfd);
+	if(it == m_RecvCacheMap.end())
 	{
 		return;
 	}
-	
-	int msglen = strlen(pMessage);
-	NetMessage Msg = {0};
-	
-	char Msg.pMessage = (char*)malloc(msglen + 1);
-	if(Msg.pMessage == NULL)
+
+	int ncount = 0, ret = 0;
+	//ÔÚ±ßÑØ´¥·¢Ä£Ê½ÏÂ, ĞèÒªÑ­»·¶ÁÈ¡½ÓÊÕ»º³åÇøµÄÊı¾İ
+	while(true)
 	{
+		ret = recv(socketfd, it->second.Cache + it->second.nByte, TCP_BUFFER_SIZE - it->second.nByte, 0);
+		if(ret < 0)
+		{
+			if(errno == EAGAIN || errno == EWOULDBLOCK)
+			{
+				//·Ç×èÈûÄ£Ê½£¬µ±Ç°»º³åÇøÎŞÊı¾İ¿É¶Á¡£
+				break;
+			}
+			else if(errno == EINTR)
+			{
+				//±»ÖĞ¶Ï, ¼ÌĞø´¦Àí
+				continue;
+			}
+			else
+			{
+				Close(socketfd);
+			}
+		}
+		else if(ret == 0){
+			//¶Ô¶Ësocket¹Ø±Õ, ·¢ËÍ¹ıFIN
+			Close(socketfd);
+		}
+		else{
+			ncount += ret;
+		}
+	}
+
+	//½â°ü¶¯×÷
+	Encode(it->second);
+}
+
+
+void NetEngine::Send(int socketfd, const char * pMessage, int MsgSize)
+{
+	if(pMessage == NULL){
 		return;
 	}
-	memset(Msg.pMessage, 0x00, msglen + 1);
+
+	int nwrite = 0;
+	int nCount = 0;
+
+	//·â°ü
+	MessageBlock msg;
+	Decode(pMessage, MsgSize, msg);
 	
-	pthread_mutex_lock(&m_SendMutex);
-	std::map<int, NetMessage>::iterator it = m_SendList.find(socketfd);
-	if(it != m_SendList.end())
+	//·¢ËÍ
+	while(nCount < msg.nByte)
 	{
-		it->second.push(Msg);
+		nwrite = send(socketfd, msg.Cache, msg.nByte, 0);
+		if(nwrite < 0)
+		{
+			if(errno == EAGAIN || errno == EWOULDBLOCK)
+			{
+				//Ğ´Èë·¢ËÍ»º³åÇø
+				MovetoSendCache(socketfd, msg.Cache + nCount, msg.nByte - nCount);
+			}
+			else if(errno == EINTR)
+			{
+				continue;
+			}
+			else
+			{
+				Close(socketfd);
+			}
+		}
+		else if(nwrite == 0)
+		{
+			Close(socketfd);
+		}
+		else
+		{
+			nCount += nwrite;
+		}
 	}
-	else
-	{
-		m_SendList.insert(std::map<int, NetMessage>::value_type(socketfd, Msg));
-	}
-	pthread_mutex_unlock(&m_SendMutex);
+	
 }
 
 void NetEngine::Close(int socketfd)
 {
-	std::map<int, MessageBlock>::iterator iter = m_SendFailList.find(fd);
-	if(iter != m_SendFailList.end())
+	pthread_mutex_lock(&m_SendMutex);	
+	std::map<int, MessageBlock>::iterator its = m_SendCacheMap.find(socketfd);
+	if(its != m_SendCacheMap.end())
 	{
-		m_SendFailList.erase(iter);
+		m_SendCacheMap.erase(its);
 	}
+	pthread_mutex_unlock(&m_SendMutex);
+
 	
-	std::map<int, NetMessage>::iterator it = m_SendList.find(fd);
-	if(iter != m_SendFailList.end())
+	pthread_mutex_lock(&m_RecvMutex);
+	std::map<int, MessageBlock>::iterator itr = m_RecvCacheMap.find(socketfd);
+	if(itr != m_SendCacheMap.end())
 	{
-		m_SendList.erase(it);
+		m_SendCacheMap.erase(itr);
 	}
+	pthread_mutex_unlock(&m_RecvMutex);
+
+	epoll_ctl(m_epollfd, EPOLL_CTL_DEL, socketfd, 0);
 	close(socketfd);
 }
 
@@ -236,64 +247,105 @@ void NetEngine::epoll_add_fd(int fd)
 	setnoblocking(fd);
 }
 
-void NetEngine::SendToClient(int fd)
+void NetEngine::MovetoSendCache(int socketfd, const char* buffer, int nDataLen)
 {
-	int nwrite = 0, nDataSize = 0, n = 0;
-	std::map<int, MessageBlock>::iterator iter = m_SendFailList.find(fd);
-	if(iter != m_SendFailList.end() && !)
+	pthread_mutex_lock(&m_SendMutex);
+	std::map<int, MessageBlock>::iterator its = m_SendCacheMap.find(socketfd);
+	if(its == m_SendCacheMap.end())
 	{
-		while(!it->second.empty())
+		return;
+	}
+
+	if(its->second.nByte + nDataLen < TCP_BUFFER_SIZE)
+	{
+		memcpy(its->second.Cache, buffer, nDataLen);
+		its->second.nByte += nDataLen;
+	}
+	pthread_mutex_unlock(&m_SendMutex);
+}
+
+
+void NetEngine::SendToClient(int socketfd)
+{
+	std::map<int, MessageBlock>::iterator iter = m_SendCacheMap.find(socketfd);
+	if(iter == m_SendCacheMap.end())
+	{
+		return;
+	}
+	
+	if(iter->second.nByte == 0)
+	{
+		return;
+	}
+
+	int nCount = 0, nwrite = 0;	
+	while(nCount < iter->second.nByte)
+	{
+		nwrite = send(socketfd, iter->second.Cache + nCount, iter->second.nByte - nCount, 0);
+		if(nwrite < 0)
 		{
-			MessageBlock Msg = it->second.front();
-			nDataSize = strlen(Msg.pMessage);
-			n = nDataSize - Msg.nSendByte;
-			while(n > 0)
+			if(errno == EAGAIN || errno == EWOULDBLOCK)
 			{
-				nwrite = send(fd, Msg.pMessage + Msg.nSendByte , n);
-				if(nwrite < n)
-				{
-					return;
-				}
-				n -= nwrite;
-				Msg.nSendByte += nwrite;
+				break;
 			}
-			it->second.pop();
+			else if(errno == EINTR)
+			{
+				continue;
+			}
+			else
+			{
+				Close(socketfd);
+			}
+		}
+		else if(nwrite == 0)
+		{
+			Close(socketfd);
+		}
+		else
+		{
+			nCount += nwrite;
 		}
 	}
 	
-	std::map<int, NetMessage>::iterator it = m_SendList.find(fd);
-	if(it != m_SendList.end())
+	if(nCount > 0)
 	{
-		if(it->second.empty())
-		{
-			return;
-		}
-		
-		NetMessage Msg = it->second.front();
-		
-		nDataSize = strlen(Msg.pMessage);
-		n = nDataSize;
-		while(n > 0)
-		{
-			nwrite = send(fd, Msg.pMessage + nDataSize - n, n);
-			if(nwrite < n)
-			{
-				//å¯¹ç«¯ç¼“å†²åŒºæ»¡, æ¶ˆæ¯å‘é€å¤±è´¥, ç¼“å­˜åˆ°å¤±è´¥é˜Ÿåˆ—, è®°å½•å·²å‘é€çš„å­—èŠ‚æ•°
-				MessageBlock message = {0};
-				memcpy(&message.Msg, &Msg, sizeof(Msg));
-				message = nDataSize - n;
-				m_SendFailList.insert(std::<int, MessageBlock>::value_type(fd, message));
-				
-				if(nwrite == -1 && errno != EAGAIN)
-				{
-					perror(strerr(errno));
-				}
-				
-				return;
-			}
-			n -= nwrite;
-		}
-		free(Msg.pMessage);
-		it->second.pop();
+		memmove(iter->second.Cache, iter->second.Cache + nCount, iter->second.nByte - nCount);
+		iter->second.nByte -= nCount;
 	}
+}
+
+void NetEngine::Decode(const char* pMessage, unsigned int MsgSize, MessageBlock& msg)
+{
+	memcpy(&msg.Cache, &MsgSize, sizeof(unsigned int));
+	memcpy(&msg.Cache + sizeof(unsigned int), pMessage, MsgSize);
+	msg.nByte = MsgSize + sizeof(unsigned int);
+}
+
+void NetEngine::Encode(MessageBlock& msg)
+{
+	NetMessage data = {0};
+	memcpy(&data.nDataLen, msg.Cache, sizeof(unsigned int));
+	if(data.nDataLen > msg.nByte)
+	{
+		return;
+	}
+
+	//char cMagic;
+	//ÑéÖ¤·Ö¸ô·û
+	//memcpy(&cMagic, msg.Cache + sizeof(unsigned int) + data.nDataLen, sizeof(char));
+
+	data.pMessage = (char*)malloc(data.nDataLen);
+	if(data.pMessage == NULL)
+	{
+		return;
+	}
+
+	//ÖØÖÃ»º³åÇø
+	unsigned int nwrite = data.nDataLen + sizeof(unsigned int);
+	unsigned int nrest = msg.nByte - nwrite;
+	memcpy(&data.pMessage, msg.Cache + sizeof(unsigned int), data.nDataLen);
+	memmove(msg.Cache, msg.Cache + nwrite, nrest);
+	msg.nByte = nrest;
+
+	m_RecvList.push(data);			
 }

@@ -4,7 +4,7 @@
 #include "test.h"
 #include <stdio.h>
 
-void NetMessage(void* arg)
+void FNetMessage(void* arg)
 {
 	printf("NetMessage: %s \n", (char*)arg);
 }
@@ -12,7 +12,7 @@ void NetMessage(void* arg)
 int main()
 {
 	NetEngine  NetManager;
-	NetManager.Init(NetMessage);
+	NetManager.Init(FNetMessage);
 	NetManager.BindPort(33333, SOCKET_TYPE_TCP);
 	NetManager.Run();
 	return 0;
