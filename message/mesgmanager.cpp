@@ -53,6 +53,7 @@ void* MesgManager::ThreadFunc(void* arg)
 		Message Msg = {0};
 		Msg = pNetMesg->m_RecvList.front();
 		pNetMesg->m_callback(Msg);
+		free(Msg.Msg.pMessage);
 		pNetMesg->m_RecvList.pop();
 		pthread_mutex_unlock(&pNetMesg->m_MesgMutex);
 	}

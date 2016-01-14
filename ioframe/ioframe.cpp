@@ -131,14 +131,17 @@ void NetEngine::AccpetFromCli(int socketfd)
 
 void NetEngine::RecvFromCli(int socketfd)
 {
+	pthread_mutex_lock(&m_RecvMutex);
 	std::map<int, MessageBlock>::iterator it = m_RecvCacheMap.find(socketfd);
 	if(it == m_RecvCacheMap.end())
-	{
+	{	
+		pthread_mutex_unlock(&m_RecvMutex);
 		return;
 	}
 
 	int ret = 0;
-	//在边沿触发模式下, 需要循环读取接收缓冲区的数据
+	bool bClose = false;
+	
 	while(true)
 	{
 		ret = recv(socketfd, it->second.Cache + it->second.nByte, TCP_BUFFER_SIZE - it->second.nByte, 0);
@@ -146,32 +149,39 @@ void NetEngine::RecvFromCli(int socketfd)
 		{
 			if(errno == EAGAIN || errno == EWOULDBLOCK)
 			{
-				//非阻塞模式，当前缓冲区无数据可读。
 				break;
 			}
 			else if(errno == EINTR)
 			{
-				//被中断, 继续处理
 				continue;
 			}
 			else
 			{
-				Close(socketfd);
+				bClose = true;
 				break;
 			}
 		}
-		else if(ret == 0){
-			//对端socket关闭, 发送过FIN
-			Close(socketfd);
+		else if(ret == 0)
+		{
+			bClose = true;
 			break;
 		}
 		else{
 			it->second.nByte += ret;
 		}
 	}
+	pthread_mutex_unlock(&m_RecvMutex);
 
+	if(bClose)
+	{
+		Close(socketfd);
+		return;
+	}
+	
 	//解包动作
+	pthread_mutex_lock(&m_RecvMutex);
 	Encode(socketfd, it->second);
+	pthread_mutex_unlock(&m_RecvMutex);
 }
 
 
@@ -283,18 +293,15 @@ void NetEngine::MovetoSendCache(int socketfd, const char* buffer, int nDataLen)
 
 void NetEngine::SendToClient(int socketfd)
 {
+	pthread_mutex_lock(&m_SendMutex);
 	std::map<int, MessageBlock>::iterator iter = m_SendCacheMap.find(socketfd);
-	if(iter == m_SendCacheMap.end())
-	{
-		return;
-	}
-	
-	if(iter->second.nByte == 0)
+	if(iter == m_SendCacheMap.end() || (iter != m_SendCacheMap.end() && iter->second.nByte == 0))
 	{
 		return;
 	}
 
 	int nCount = 0, nwrite = 0;	
+	bool bClose = false;
 	while(nCount < iter->second.nByte)
 	{
 		nwrite = send(socketfd, iter->second.Cache + nCount, iter->second.nByte - nCount, 0);
@@ -310,13 +317,13 @@ void NetEngine::SendToClient(int socketfd)
 			}
 			else
 			{
-				Close(socketfd);
+				bClose = true;
 				break;
 			}
 		}
 		else if(nwrite == 0)
-		{
-			Close(socketfd);
+		{		
+			bClose = true;
 			break;
 		}
 		else
@@ -329,6 +336,12 @@ void NetEngine::SendToClient(int socketfd)
 	{
 		memmove(iter->second.Cache, iter->second.Cache + nCount, iter->second.nByte - nCount);
 		iter->second.nByte -= nCount;
+	}
+	pthread_mutex_unlock(&m_SendMutex);
+	
+	if(bClose)
+	{
+		Close(socketfd);
 	}
 }
 
