@@ -26,7 +26,7 @@ NetEngine::~NetEngine()
 
 void NetEngine::Init(NetFunc callback)
 {
-	m_callback = callback;
+	m_MesgManager.Init(callback);
 	assert((m_epollfd = epoll_create(MAX_EPOLL_EVENTS_NUM)) != -1);
 }
 
@@ -38,9 +38,20 @@ void NetEngine::BindPort(int port)
 	addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	addr.sin_port = htons(port);
 
-	assert((m_listenfd = socket(PF_INET, SOCK_STREAM, 0)) >= 0);
-	assert(bind(m_listenfd, (struct sockaddr*)&addr, sizeof(addr)) != -1);
-	assert(listen(m_listenfd, m_MaxListenNum) != -1);
+	if((m_listenfd = socket(PF_INET, SOCK_STREAM, 0)) < 0)
+	{
+		perror("socket");
+	}
+	
+	if(bind(m_listenfd, (struct sockaddr*)&addr, sizeof(addr)) == -1)
+	{
+		perror("bind");
+	}
+	
+	if(listen(m_listenfd, m_MaxListenNum) == -1)
+	{
+		perror("listen");
+	}
 	
 	//在服务器调用accept之前，客户端主动发送RST终止连接，导致刚刚建立的连接从就绪队列中移出。
 	//如果套接口被设置成阻塞模式，服务器就会一直阻塞在accept调用上，直到其他某个客户建立一个新的连接为止。
@@ -126,7 +137,7 @@ void NetEngine::RecvFromCli(int socketfd)
 		return;
 	}
 
-	int ncount = 0, ret = 0;
+	int ret = 0;
 	//在边沿触发模式下, 需要循环读取接收缓冲区的数据
 	while(true)
 	{
@@ -146,19 +157,21 @@ void NetEngine::RecvFromCli(int socketfd)
 			else
 			{
 				Close(socketfd);
+				break;
 			}
 		}
 		else if(ret == 0){
 			//对端socket关闭, 发送过FIN
 			Close(socketfd);
+			break;
 		}
 		else{
-			ncount += ret;
+			it->second.nByte += ret;
 		}
 	}
 
 	//解包动作
-	Encode(it->second);
+	Encode(socketfd, it->second);
 }
 
 
@@ -185,6 +198,7 @@ void NetEngine::Send(int socketfd, const char * pMessage, int MsgSize)
 			{
 				//写入发送缓冲区
 				MovetoSendCache(socketfd, msg.Cache + nCount, msg.nByte - nCount);
+				break;
 			}
 			else if(errno == EINTR)
 			{
@@ -193,11 +207,13 @@ void NetEngine::Send(int socketfd, const char * pMessage, int MsgSize)
 			else
 			{
 				Close(socketfd);
+				break;
 			}
 		}
 		else if(nwrite == 0)
 		{
 			Close(socketfd);
+			break;
 		}
 		else
 		{
@@ -220,9 +236,9 @@ void NetEngine::Close(int socketfd)
 	
 	pthread_mutex_lock(&m_RecvMutex);
 	std::map<int, MessageBlock>::iterator itr = m_RecvCacheMap.find(socketfd);
-	if(itr != m_SendCacheMap.end())
+	if(itr != m_RecvCacheMap.end())
 	{
-		m_SendCacheMap.erase(itr);
+		m_RecvCacheMap.erase(itr);
 	}
 	pthread_mutex_unlock(&m_RecvMutex);
 
@@ -295,11 +311,13 @@ void NetEngine::SendToClient(int socketfd)
 			else
 			{
 				Close(socketfd);
+				break;
 			}
 		}
 		else if(nwrite == 0)
 		{
 			Close(socketfd);
+			break;
 		}
 		else
 		{
@@ -316,16 +334,17 @@ void NetEngine::SendToClient(int socketfd)
 
 void NetEngine::Decode(const char* pMessage, unsigned int MsgSize, MessageBlock& msg)
 {
-	memcpy(&msg.Cache, &MsgSize, sizeof(unsigned int));
-	memcpy(&msg.Cache + sizeof(unsigned int), pMessage, MsgSize);
+	memcpy(msg.Cache, &MsgSize, sizeof(unsigned int));
+	memcpy(msg.Cache + sizeof(unsigned int), pMessage, MsgSize);
 	msg.nByte = MsgSize + sizeof(unsigned int);
 }
 
-void NetEngine::Encode(MessageBlock& msg)
+void NetEngine::Encode(int socketfd, MessageBlock& msg)
 {
-	NetMessage data = {0};
-	memcpy(&data.nDataLen, msg.Cache, sizeof(unsigned int));
-	if(data.nDataLen > msg.nByte)
+	Message data = {0};
+	memcpy(&data.Msg.nDataLen, msg.Cache, sizeof(unsigned int));
+
+	if(data.Msg.nDataLen + sizeof(unsigned int) > msg.nByte)
 	{
 		return;
 	}
@@ -334,18 +353,20 @@ void NetEngine::Encode(MessageBlock& msg)
 	//验证分隔符
 	//memcpy(&cMagic, msg.Cache + sizeof(unsigned int) + data.nDataLen, sizeof(char));
 
-	data.pMessage = (char*)malloc(data.nDataLen);
-	if(data.pMessage == NULL)
+	data.Msg.pMessage = (char*)malloc(data.Msg.nDataLen);
+	if(data.Msg.pMessage == NULL)
 	{
 		return;
 	}
 
 	//重置缓冲区
-	unsigned int nwrite = data.nDataLen + sizeof(unsigned int);
+	unsigned int nwrite = data.Msg.nDataLen + sizeof(unsigned int);
 	unsigned int nrest = msg.nByte - nwrite;
-	memcpy(&data.pMessage, msg.Cache + sizeof(unsigned int), data.nDataLen);
+	memcpy(data.Msg.pMessage, msg.Cache + sizeof(unsigned int), data.Msg.nDataLen);
 	memmove(msg.Cache, msg.Cache + nwrite, nrest);
 	msg.nByte = nrest;
-
-	m_RecvList.push(data);			
+	data.socketfd = socketfd;
+	m_MesgManager.SendMesg(data);
 }
+
+

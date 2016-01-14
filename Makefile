@@ -1,13 +1,15 @@
 
 #env opt
 DESTDIR = ./build/obj
-SRCDIR = database:ioframe:log:mutex:thread
-libsdkobj = ioframe.o dbconnector.o log.o mutex.o thread.o
+SRCDIR = database:ioframe:log:mutex:thread:message
+HEARDDIR = ./database ./ioframe ./log ./mutex ./thread ./message
+libsdkobj = ioframe.o dbconnector.o log.o mutex.o thread.o mesgmanager.o
 DEPENDFILES = $(libsdkobj:.o=.d)
 
 #compile opt
 CXX = g++
 CXXFLAGS = -g
+CXXFLAGS += $(addprefix -I, $(HEARDDIR))
 
 #set search path
 vpath %.cpp $(SRCDIR)

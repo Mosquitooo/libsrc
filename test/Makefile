@@ -1,7 +1,7 @@
 
 build_dir  = ./bin
 source_dir = .:
-header_dir = ../database/ ../ioframe/ ../log/ ../mutex/ ../thread/
+header_dir = ../database/ ../ioframe/ ../log/ ../mutex/ ../thread/ ../message/
 libobjects = ../libsdk.a -lpthread
 
 OBJFILES = maintest.o
